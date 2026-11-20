@@ -28,7 +28,7 @@ private:
 
     bool exclusionsOnly = false;
     QTableWidget *exclusionTable = nullptr;
-    void addExclusionRow(const QString &value, int scope);
+    void addExclusionRow(const QString &value, int scope, bool application = false);
     QTableWidget *processTable = nullptr;
     QTableWidget *domainTable = nullptr;
     QPushButton *saveButton = nullptr;

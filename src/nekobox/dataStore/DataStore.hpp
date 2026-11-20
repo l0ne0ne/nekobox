@@ -37,6 +37,8 @@ namespace Configs {
 
         QStringList exclusion_match;
         QList<int> exclusion_scope; // 0 = both, 1 = TUN, 2 = proxy
+        QStringList exclusion_app;
+        QList<int> exclusion_app_scope;
         QStringList process_match;
         QList<int> process_outbound;
         QStringList domain_match;

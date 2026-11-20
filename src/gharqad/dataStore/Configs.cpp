@@ -411,6 +411,8 @@ QByteArray hash = QCryptographicHash::hash(
     DECL_MAP(QuickRoutes)
         ADD_MAP("exclusion_match", exclusion_match, stringlist);
         ADD_MAP("exclusion_scope", exclusion_scope, intList);
+        ADD_MAP("exclusion_app", exclusion_app, stringlist);
+        ADD_MAP("exclusion_app_scope", exclusion_app_scope, intList);
         ADD_MAP("process_match", process_match, stringlist);
         ADD_MAP("process_outbound", process_outbound, intList);
         ADD_MAP("domain_match", domain_match, stringlist);

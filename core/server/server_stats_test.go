@@ -12,7 +12,7 @@ import (
 func TestQueryStatsReportsEveryOutbound(t *testing.T) {
 	s := &server{}
 	out, err := s.Start(context.Background(), &gen.LoadConfigReq{
-		CoreConfig: `{"log":{"disabled":true},"experimental":{"clash_api":{}},` +
+		CoreConfig: `{"log":{"disabled":true},` +
 			`"outbounds":[{"type":"direct","tag":"proxy"},{"type":"direct","tag":"direct"}]}`,
 	})
 	if err != nil || out.Error != "" {

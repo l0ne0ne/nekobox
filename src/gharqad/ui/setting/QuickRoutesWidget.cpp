@@ -32,25 +32,36 @@ QuickRoutesWidget::QuickRoutesWidget(QWidget *parent, bool exclusions) : QWidget
     root->setSpacing(6);
 
     if (exclusionsOnly) {
-        auto *hint = new QLabel(tr("Add a URL, domain, IP address or CIDR range to connect directly. Domains include subdomains; URL paths are ignored. Saving restarts the core."), this);
+        auto *hint = new QLabel(tr("Send selected addresses or apps directly. Domains include subdomains and URL paths are ignored. Apps match by executable name. Saving restarts the core."), this);
         hint->setWordWrap(true);
         root->addWidget(hint);
         exclusionTable = new QTableWidget(0, 2, this);
-        setupTable(exclusionTable, tr("URL, domain or IP"));
-        exclusionTable->setHorizontalHeaderLabels({tr("URL, domain or IP"), tr("Exclude from")});
+        setupTable(exclusionTable, tr("Address or application"));
+        exclusionTable->setHorizontalHeaderLabels({tr("Address or application"), tr("Exclude from")});
         root->addWidget(exclusionTable, 1);
         auto *buttons = new QHBoxLayout();
-        auto *add = new QPushButton(tr("Add exclusion"), this);
+        auto *add = new QPushButton(tr("Add address"), this);
+        auto *addApp = new QPushButton(tr("Add app"), this);
         auto *remove = new QPushButton(tr("Remove selected"), this);
         auto *save = new QPushButton(tr("Save"), this);
-        buttons->addWidget(add); buttons->addWidget(remove); buttons->addStretch(); buttons->addWidget(save);
+        buttons->addWidget(add);
+        buttons->addWidget(addApp);
+        buttons->addWidget(remove);
+        buttons->addStretch();
+        buttons->addWidget(save);
         root->addLayout(buttons);
         connect(add, &QPushButton::clicked, this, [this] { addExclusionRow({}, 0); });
+        connect(addApp, &QPushButton::clicked, this, [this] {
+            const auto path = browseForExecutable();
+            if (!path.isEmpty()) addExclusionRow(QFileInfo(path).fileName(), 0, true);
+        });
         connect(remove, &QPushButton::clicked, this, [this] { removeSelectedRows(exclusionTable); });
         connect(save, &QPushButton::clicked, this, [this] { saveToStore(); });
         const auto routes = Configs::dataStore->routing->quick_routes;
         for (int i = 0; i < routes->exclusion_match.size(); ++i)
             addExclusionRow(routes->exclusion_match[i], routes->exclusion_scope.value(i, 0));
+        for (int i = 0; i < routes->exclusion_app.size(); ++i)
+            addExclusionRow(routes->exclusion_app[i], routes->exclusion_app_scope.value(i, 0), true);
         return;
     }
     auto *splitter = new QSplitter(Qt::Vertical, this);
@@ -314,7 +325,15 @@ void QuickRoutesWidget::saveToStore() {
     if (exclusionsOnly) {
         QStringList matches;
         QList<int> scopes;
+        QStringList apps;
+        QList<int> appScopes;
         for (int row = 0; row < exclusionTable->rowCount(); ++row) {
+            const auto scope = outboundAt(exclusionTable, row);
+            if (const auto *app = exclusionTable->item(row, 0)) {
+                apps.append(app->data(Qt::UserRole).toString());
+                appScopes.append(scope);
+                continue;
+            }
             auto *input = qobject_cast<QLineEdit *>(exclusionTable->cellWidget(row, 0));
             if (input->text().trimmed().isEmpty()) continue;
             const auto value = Configs::NormalizeExclusionAddress(input->text());
@@ -324,10 +343,12 @@ void QuickRoutesWidget::saveToStore() {
                 return;
             }
             matches.append(value);
-            scopes.append(outboundAt(exclusionTable, row));
+            scopes.append(scope);
         }
         routes->exclusion_match = matches;
         routes->exclusion_scope = scopes;
+        routes->exclusion_app = apps;
+        routes->exclusion_app_scope = appScopes;
         Configs::dataStore->routing->Save();
         if (MW_dialog_message) MW_dialog_message("", "UpdateDataStore,RouteChanged");
         return;
@@ -367,19 +388,26 @@ void QuickRoutesWidget::saveToStore() {
     }
 }
 
-void QuickRoutesWidget::addExclusionRow(const QString &value, int scope) {
+void QuickRoutesWidget::addExclusionRow(const QString &value, int scope, bool application) {
     const int row = exclusionTable->rowCount();
     exclusionTable->insertRow(row);
-    auto *input = new QLineEdit(value);
-    input->setPlaceholderText(tr("example.com, https://example.com, 192.168.1.1 or 10.0.0.0/8"));
-    input->setAccessibleName(tr("URL, domain or IP"));
+    QLineEdit *input = nullptr;
+    if (application) {
+        auto *item = new QTableWidgetItem(tr("App: %1").arg(value));
+        item->setData(Qt::UserRole, value);
+        exclusionTable->setItem(row, 0, item);
+    } else {
+        input = new QLineEdit(value);
+        input->setPlaceholderText(tr("example.com, 192.168.1.1 or 10.0.0.0/8"));
+        input->setAccessibleName(tr("URL, domain or IP"));
+        exclusionTable->setCellWidget(row, 0, input);
+    }
     auto *combo = new QComboBox();
     combo->addItem(tr("Both"), 0);
     combo->addItem(tr("TUN"), 1);
     combo->addItem(tr("Proxy"), 2);
     combo->setCurrentIndex(qBound(0, scope, 2));
     combo->setAccessibleName(tr("Exclude from"));
-    exclusionTable->setCellWidget(row, 0, input);
     exclusionTable->setCellWidget(row, 1, combo);
-    if (value.isEmpty()) input->setFocus();
+    if (input && value.isEmpty()) input->setFocus();
 }

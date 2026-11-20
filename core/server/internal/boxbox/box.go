@@ -251,6 +251,10 @@ func New(options Options) (*Box, error) {
 		if err != nil {
 			return nil, E.Cause(err, "initialize router")
 		}
+		// QueryStats uses its own counters even when connection history is disabled.
+		trafficCounters := NewTrafficCounters(outboundManager, endpointManager)
+		service.MustRegisterPtr(ctx, trafficCounters)
+		router.AppendTracker(trafficCounters)
 		if needClashAPI || needAPIService || options.PlatformLogWriter != nil {
 			trafficManager := trafficcontrol.NewManager(outboundManager)
 			service.MustRegisterPtr(ctx, trafficManager)
