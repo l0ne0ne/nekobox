@@ -361,7 +361,8 @@ namespace Configs {
         QJsonObject config,
         const QUrl &url,
         int timeoutMs,
-        const std::atomic<bool> &cancel)
+        const std::atomic<bool> &cancel,
+        const QString &caBundle)
     {
         XrayURLTestResult result;
 
@@ -504,7 +505,8 @@ namespace Configs {
                             break;
                         }
 
-                        QThread::msleep(50);
+                        // Refresh QProcess state even without a running Qt event loop.
+                        if (process.waitForFinished(50)) break;
                     }
 
                     if (!ready) {
@@ -578,6 +580,9 @@ namespace Configs {
                         );
 
                         session.SetVerifySsl(cpr::VerifySsl{true});
+                        if (!caBundle.isEmpty()) {
+                            session.SetSslOptions(cpr::Ssl(cpr::ssl::CaInfo{caBundle.toStdString()}));
+                        }
 
                         // Stop once the final response headers are received.
                         session.SetHeaderCallback(

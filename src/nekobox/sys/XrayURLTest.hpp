@@ -13,8 +13,10 @@ struct XrayURLTestResult {
 };
 
 // Runs synchronously on a worker thread. Owns its process, port and config;
+// caBundle optionally supplies trusted CA certificates; empty uses system trust.
 // never reloads or stops the user's active proxy.
 XrayURLTestResult TestXrayURL(const QString &program, QJsonObject config,
                             const QUrl &url, int timeoutMs,
-                            const std::atomic<bool> &cancel);
+                            const std::atomic<bool> &cancel,
+                            const QString &caBundle = {});
 }
