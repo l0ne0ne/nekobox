@@ -9,6 +9,7 @@ import http.server
 import json
 import os
 from pathlib import Path
+import shlex
 import socket
 import ssl
 import subprocess
