@@ -1258,6 +1258,8 @@ skip_updater_hide:
   speedChartWidget = new SpeedWidget(this);
   ui->graph_tab->layout()->addWidget(speedChartWidget);
 
+  ui->stats_widget->addTab(new QuickRoutesWidget(this, true), tr("Exclusions"));
+
   // setup Routes tab
   quickRoutesWidget = new QuickRoutesWidget(this);
   ui->routes_tab->layout()->addWidget(

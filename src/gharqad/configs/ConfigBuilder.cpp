@@ -1,3 +1,4 @@
+#include <nekobox/dataStore/ExclusionAddress.hpp>
 
 
 #include <nekobox/dataStore/RouteEntity.h>
@@ -1283,6 +1284,25 @@ static QList<std::shared_ptr<RouteRule>> BuildQuickRouteRules() {
     return rules;
   }
   auto quick = dataStore->routing->quick_routes;
+  for (int i = 0; i < quick->exclusion_match.size(); ++i) {
+    const auto value = NormalizeExclusionAddress(quick->exclusion_match[i]);
+    if (value.isEmpty()) continue;
+    const auto scope = quick->exclusion_scope.value(i, 0);
+    if (scope < 0 || scope > 2) continue;
+    auto rule = std::make_shared<RouteRule>();
+    rule->name = "Exclusion: " + value;
+    rule->action = "route";
+    rule->outboundID = directID;
+    if (scope == 1) rule->inbound = {"tun-in"};
+    else if (scope == 2) rule->inbound = {"mixed-in"};
+    else rule->inbound = {"tun-in", "mixed-in"};
+    QHostAddress address;
+    if (value.contains('/') || address.setAddress(value))
+      rule->ip_cidr = {value.contains('/') ? value : value + (address.protocol() == QAbstractSocket::IPv4Protocol ? "/32" : "/128")};
+    else rule->domain_suffix = {value};
+    rules << rule;
+  }
+
 
   QList<int> outboundOrder;
   QMap<int, QList<QString>> processPaths;
@@ -1398,7 +1418,7 @@ static bool QuickRoutesConfigured() {
     return false;
   }
   auto quick = dataStore->routing->quick_routes;
-  return !quick->process_match.isEmpty() || !quick->domain_match.isEmpty();
+  return !quick->exclusion_match.isEmpty() || !quick->process_match.isEmpty() || !quick->domain_match.isEmpty();
 }
 
 // The core only looks a connection's owning process up when it knows some rule

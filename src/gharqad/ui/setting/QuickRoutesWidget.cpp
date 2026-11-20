@@ -6,6 +6,8 @@
 #include <nekobox/dataStore/RouteEntity.h>
 #include <nekobox/global/GuiUtils.hpp>
 
+#include <nekobox/dataStore/ExclusionAddress.hpp>
+#include <QMessageBox>
 #include <QComboBox>
 #include <QDir>
 #include <QFileDialog>
@@ -24,11 +26,33 @@
 
 #include <algorithm>
 
-QuickRoutesWidget::QuickRoutesWidget(QWidget *parent) : QWidget(parent) {
+QuickRoutesWidget::QuickRoutesWidget(QWidget *parent, bool exclusions) : QWidget(parent), exclusionsOnly(exclusions) {
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(4, 4, 4, 4);
     root->setSpacing(6);
 
+    if (exclusionsOnly) {
+        auto *hint = new QLabel(tr("Add a URL, domain, IP address or CIDR range to connect directly. Domains include subdomains; URL paths are ignored. Saving restarts the core."), this);
+        hint->setWordWrap(true);
+        root->addWidget(hint);
+        exclusionTable = new QTableWidget(0, 2, this);
+        setupTable(exclusionTable, tr("URL, domain or IP"));
+        exclusionTable->setHorizontalHeaderLabels({tr("URL, domain or IP"), tr("Exclude from")});
+        root->addWidget(exclusionTable, 1);
+        auto *buttons = new QHBoxLayout();
+        auto *add = new QPushButton(tr("Add exclusion"), this);
+        auto *remove = new QPushButton(tr("Remove selected"), this);
+        auto *save = new QPushButton(tr("Save"), this);
+        buttons->addWidget(add); buttons->addWidget(remove); buttons->addStretch(); buttons->addWidget(save);
+        root->addLayout(buttons);
+        connect(add, &QPushButton::clicked, this, [this] { addExclusionRow({}, 0); });
+        connect(remove, &QPushButton::clicked, this, [this] { removeSelectedRows(exclusionTable); });
+        connect(save, &QPushButton::clicked, this, [this] { saveToStore(); });
+        const auto routes = Configs::dataStore->routing->quick_routes;
+        for (int i = 0; i < routes->exclusion_match.size(); ++i)
+            addExclusionRow(routes->exclusion_match[i], routes->exclusion_scope.value(i, 0));
+        return;
+    }
     auto *splitter = new QSplitter(Qt::Vertical, this);
     splitter->setChildrenCollapsible(false);
     splitter->addWidget(makeSection(tr("Applications"), &processTable, tr("Application"), true));
@@ -88,7 +112,7 @@ QWidget *QuickRoutesWidget::makeSection(const QString &title, QTableWidget **tab
 
 void QuickRoutesWidget::showEvent(QShowEvent *event) {
     QWidget::showEvent(event);
-    refreshOutboundCombos();
+    if (!exclusionsOnly) refreshOutboundCombos();
 }
 
 void QuickRoutesWidget::setupTable(QTableWidget *table, const QString &firstHeader) {
@@ -287,6 +311,27 @@ void QuickRoutesWidget::saveToStore() {
         return;
     }
     auto routes = Configs::dataStore->routing->quick_routes;
+    if (exclusionsOnly) {
+        QStringList matches;
+        QList<int> scopes;
+        for (int row = 0; row < exclusionTable->rowCount(); ++row) {
+            auto *input = qobject_cast<QLineEdit *>(exclusionTable->cellWidget(row, 0));
+            if (input->text().trimmed().isEmpty()) continue;
+            const auto value = Configs::NormalizeExclusionAddress(input->text());
+            if (value.isEmpty()) {
+                QMessageBox::warning(this, tr("Invalid exclusion"), tr("Row %1: enter a valid domain, URL, IP address or CIDR range.").arg(row + 1));
+                input->setFocus();
+                return;
+            }
+            matches.append(value);
+            scopes.append(outboundAt(exclusionTable, row));
+        }
+        routes->exclusion_match = matches;
+        routes->exclusion_scope = scopes;
+        Configs::dataStore->routing->Save();
+        if (MW_dialog_message) MW_dialog_message("", "UpdateDataStore,RouteChanged");
+        return;
+    }
     routes->process_match.clear();
     routes->process_outbound.clear();
     routes->domain_match.clear();
@@ -320,4 +365,21 @@ void QuickRoutesWidget::saveToStore() {
     if (MW_dialog_message) {
         MW_dialog_message("", "UpdateDataStore,RouteChanged");
     }
+}
+
+void QuickRoutesWidget::addExclusionRow(const QString &value, int scope) {
+    const int row = exclusionTable->rowCount();
+    exclusionTable->insertRow(row);
+    auto *input = new QLineEdit(value);
+    input->setPlaceholderText(tr("example.com, https://example.com, 192.168.1.1 or 10.0.0.0/8"));
+    input->setAccessibleName(tr("URL, domain or IP"));
+    auto *combo = new QComboBox();
+    combo->addItem(tr("Both"), 0);
+    combo->addItem(tr("TUN"), 1);
+    combo->addItem(tr("Proxy"), 2);
+    combo->setCurrentIndex(qBound(0, scope, 2));
+    combo->setAccessibleName(tr("Exclude from"));
+    exclusionTable->setCellWidget(row, 0, input);
+    exclusionTable->setCellWidget(row, 1, combo);
+    if (value.isEmpty()) input->setFocus();
 }

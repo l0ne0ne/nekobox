@@ -15,7 +15,7 @@ class QuickRoutesWidget : public QWidget {
     Q_OBJECT
 
 public:
-    explicit QuickRoutesWidget(QWidget *parent = nullptr);
+    explicit QuickRoutesWidget(QWidget *parent = nullptr, bool exclusions = false);
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -26,6 +26,9 @@ private:
         QString name;
     };
 
+    bool exclusionsOnly = false;
+    QTableWidget *exclusionTable = nullptr;
+    void addExclusionRow(const QString &value, int scope);
     QTableWidget *processTable = nullptr;
     QTableWidget *domainTable = nullptr;
     QPushButton *saveButton = nullptr;

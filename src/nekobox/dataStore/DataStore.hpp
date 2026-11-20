@@ -35,6 +35,8 @@ namespace Configs {
         DECLARE_STORE_TYPE(NoSave)
         virtual ConfJsMap _map() override;
 
+        QStringList exclusion_match;
+        QList<int> exclusion_scope; // 0 = both, 1 = TUN, 2 = proxy
         QStringList process_match;
         QList<int> process_outbound;
         QStringList domain_match;
