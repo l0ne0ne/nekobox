@@ -7,6 +7,8 @@ import argparse
 import copy
 import http.server
 import json
+import os
+import sys
 from pathlib import Path
 import socket
 import struct
@@ -14,6 +16,43 @@ import subprocess
 import tempfile
 import threading
 import time
+
+
+def windows_process_job():
+    """Keep the core and its descendants in a kill-on-close Windows job."""
+    if os.name != 'nt':
+        return None
+    import ctypes
+    from ctypes import wintypes
+    class BasicLimits(ctypes.Structure):
+        _fields_ = [('process_time', ctypes.c_longlong), ('job_time', ctypes.c_longlong),
+                    ('flags', wintypes.DWORD), ('min_working_set', ctypes.c_size_t),
+                    ('max_working_set', ctypes.c_size_t), ('active_processes', wintypes.DWORD),
+                    ('affinity', ctypes.c_size_t), ('priority', wintypes.DWORD),
+                    ('scheduling', wintypes.DWORD)]
+    class IoCounters(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_ulonglong) for name in
+                    ('read_ops', 'write_ops', 'other_ops', 'read_bytes', 'write_bytes', 'other_bytes')]
+    class Limits(ctypes.Structure):
+        _fields_ = [('basic', BasicLimits), ('io', IoCounters),
+                    ('process_memory', ctypes.c_size_t), ('job_memory', ctypes.c_size_t),
+                    ('peak_process_memory', ctypes.c_size_t), ('peak_job_memory', ctypes.c_size_t)]
+    api = ctypes.WinDLL('kernel32', use_last_error=True)
+    api.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+    api.CreateJobObjectW.restype = wintypes.HANDLE
+    api.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    api.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    api.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = api.CreateJobObjectW(None, None)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    limits = Limits()
+    limits.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not api.SetInformationJobObject(handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
+        error = ctypes.WinError(ctypes.get_last_error())
+        api.CloseHandle(handle)
+        raise error
+    return api, handle
 
 
 def receive(sock, size):
@@ -120,6 +159,8 @@ def fetch(proxy_port, target_port):
 
 
 def main():
+    sys.stdout.reconfigure(errors='backslashreplace')
+    sys.stderr.reconfigure(errors='backslashreplace')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--core', type=Path, required=True)
     parser.add_argument('--xray', type=Path, required=True)
@@ -151,10 +192,16 @@ def main():
         with (root/'core.log').open('w', encoding='utf-8') as log:
             core = subprocess.Popen([str(args.core.resolve()), 'core', '-port', str(rpc_port),
                 '-ruleset-cache-directory', str(root/'rules')], cwd=root, stdout=log, stderr=subprocess.STDOUT)
+            job = None
             try:
+                job = windows_process_job()
+                if job is not None:
+                    import ctypes
+                    if not job[0].AssignProcessToJobObject(job[1], int(core._handle)):
+                        raise ctypes.WinError(ctypes.get_last_error())
                 deadline = time.monotonic() + 15
                 while not listening(rpc_port) and time.monotonic() < deadline:
-                    assert core.poll() is None, (root/'core.log').read_text(errors='replace')
+                    assert core.poll() is None, (root/'core.log').read_text(encoding='utf-8', errors='replace')
                     time.sleep(.05)
                 assert listening(rpc_port), 'Core RPC did not start'
                 bad = copy.deepcopy(xray)
@@ -189,15 +236,23 @@ def main():
                 assert_closed(proxy_port); assert_closed(xray_port)
                 print('PASS: missing executable, repeated stop and restart recovery', flush=True)
             except BaseException:
-                print((root/'core.log').read_text(errors='replace'), flush=True)
+                print(f'Core exit code: {core.poll()}', flush=True)
+                print((root/'core.log').read_text(encoding='utf-8', errors='replace'), flush=True)
                 raise
             finally:
                 try:
                     if core.poll() is None: stop()
                 except (OSError, AssertionError):
                     pass
-                core.terminate()
-                core.wait(timeout=5)
+                if job is not None:
+                    job[0].CloseHandle(job[1])
+                if core.poll() is None:
+                    core.terminate()
+                try:
+                    core.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    core.kill()
+                    core.wait(timeout=5)
                 httpd.shutdown(); httpd.server_close()
     print('PASS: normal Start/Stop RPC, JSON filename, forwarding and failure cleanup')
 
