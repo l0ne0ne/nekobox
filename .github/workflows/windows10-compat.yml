@@ -15,7 +15,7 @@ jobs:
     - name: Install test dependencies
       run: |-
         sudo apt-get update
-        sudo apt-get install -y qt6-base-dev pkg-config g++ python3 jq
+        sudo apt-get install -y qt6-base-dev pkg-config g++ python3 jq cmake libcurl4-openssl-dev libssl-dev
     - name: Run compatibility and link regressions
       run: |
         set -euo pipefail

@@ -9,7 +9,6 @@ import http.server
 import json
 import os
 from pathlib import Path
-import shlex
 import socket
 import ssl
 import subprocess
@@ -47,13 +46,13 @@ def main():
     parser.add_argument('--binary', type=Path, help='Use an already compiled tester (Windows smoke test)')
     args = parser.parse_args()
     xray = str(args.xray.resolve())
-    flags = [] if args.binary else shlex.split(subprocess.check_output(['pkg-config', '--cflags', '--libs', 'Qt6Core', 'Qt6Network'], text=True))
     with tempfile.TemporaryDirectory(prefix='nekobox-url-regression-') as directory:
         root = Path(directory)
-        binary = args.binary.resolve() if args.binary else root / 'url-test'
-        if not args.binary: subprocess.run([os.environ.get('CXX', 'g++'), '-std=c++17', '-fPIC', '-pthread',
-                        '-I' + str(REPO / 'src'), str(REPO / 'tests/xray-url-test/main.cpp'),
-                        str(REPO / 'src/gharqad/sys/XrayURLTest.cpp'), '-o', str(binary), *flags], check=True)
+        binary = args.binary.resolve() if args.binary else root / 'build' / 'xray-url-test'
+        if not args.binary:
+            subprocess.run(['cmake', '-S', str(REPO / 'tests/xray-url-test'),
+                            '-B', str(root / 'build'), '-DCMAKE_BUILD_TYPE=Release'], check=True)
+            subprocess.run(['cmake', '--build', str(root / 'build'), '--parallel', '2'], check=True)
         subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
                         '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1', '-keyout', str(root/'key.pem'), '-out', str(root/'cert.pem')],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
