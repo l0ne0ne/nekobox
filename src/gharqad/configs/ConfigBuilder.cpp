@@ -1820,12 +1820,25 @@ QJsonObject BuildTunInbound(const QStringList &directIPSets,
     tunAddress += getTunAddress6();
   inboundObj["address"] = tunAddress;
 
-  QJsonArray routeExcludeAddrs =
-      QListStr2QJsonArray(Configs::dataStore->route_exclude_addrs);
+  QJsonArray routeExcludeAddrs;
+  const auto appendExclusion = [&](const QString &item) {
+    if (item.trimmed().isEmpty()) return;
+    const auto prefix = NormalizeTunRoutePrefix(item);
+    if (prefix.isEmpty()) {
+      if (MW_show_log) {
+        MW_show_log("[TUN] Skipped invalid route exclusion: " + item +
+                    " (enter an IP address or CIDR range without a port)");
+      }
+      return;
+    }
+    if (!routeExcludeAddrs.contains(prefix)) routeExcludeAddrs.append(prefix);
+  };
+  for (const auto &item : dataStore->route_exclude_addrs)
+    appendExclusion(item);
   QJsonArray routeExcludeSets;
   if (dataStore->enable_tun_routing) {
-    for (auto item : directIPCIDRs)
-      routeExcludeAddrs << item;
+    for (const auto &item : directIPCIDRs)
+      appendExclusion(item);
     for (auto item : directIPSets)
       routeExcludeSets << item;
   }

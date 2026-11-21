@@ -4,6 +4,25 @@
 #include <QRegularExpression>
 
 namespace Configs {
+inline QString NormalizeTunRoutePrefix(const QString &input) {
+    const auto value = input.trimmed();
+    const auto slash = value.indexOf('/');
+    const auto host = slash < 0 ? value : value.left(slash);
+    QHostAddress address;
+    if (!address.setAddress(host) || !address.scopeId().isEmpty()) return {};
+
+    const int maxPrefix = address.protocol() == QAbstractSocket::IPv4Protocol ? 32 : 128;
+    int prefix = maxPrefix;
+    if (slash >= 0) {
+        const auto length = value.mid(slash + 1);
+        static const QRegularExpression digits(QStringLiteral("^[0-9]{1,3}$"));
+        if (!digits.match(length).hasMatch()) return {};
+        prefix = length.toInt();
+        if (prefix > maxPrefix) return {};
+    }
+    return address.toString() + '/' + QString::number(prefix);
+}
+
 inline QString NormalizeExclusionAddress(QString value) {
     value = value.trimmed();
     if (value.isEmpty()) return {};
